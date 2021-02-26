@@ -1,0 +1,149 @@
+#!/usr/local/bin/ansible-playbook --inventory=inventory
+
+#############################################################################################
+#### This is a two step process to use as a workaroung for the bug with etcd-backup operator
+#### not working on FIPS enabled hosts
+#### The first step is to launch the debugger for the node you want to perform the backup on 
+#### using the following command 
+#       `oc debug node/$(oc get nodes --no-headers | grep master | sed -n 2p | tail -n 1 | awk '{print $1}')`
+#### You can change the host by changing the number in front of p for the sed command
+#### Once on the debugger run the following commands in order. The debugger is interactive and that is why you are running these commands one at a time
+#### Chroot in the /host to perform the backup and save you files for later extraction
+#       `chroot /host`
+####  make the directory that will be used to store the backup files
+#       `mkdir -p /home/core/assets/etcd-backup/$(date +"%d-%m-%Y")`
+#### Run the backup command
+#       `/usr/local/bin/cluster-backup.sh /home/core/assets/etcd-backup/$(date +"%d-%m-%Y")`
+#### Make the core user the owner of the backup files generated above
+#       `chown -R core /home/core/assets/etcd-backup/$(date +"%d-%m-%Y")`
+#### At this point bring up another terminal where you will run the playbook below.
+#### It is assumed that you have the oc client running on the host and that the aws command line tool is also available and configured
+################################################################################################
+
+- name: 'Extract backup file from etcd debugger node and store in S3'
+  hosts: localhost
+  become: yes
+  vars_files:
+    - 'vault.yml'
+  vars:
+    ansible_python_interpreter: /usr/bin/python3
+    module: "retrieve-store-backup-on-s3"
+    ansible_name_module: " ETCD BACKUP | {{ module }}"
+    bkp_files_dir_on_pod: '/host/home/core/assets/etcd-backup'
+    bkp_staging_dir_on_controller: '/tmp/etcd-backup'
+    bkp_bundle_dir_on_controller: '/tmp'
+    ocp_cluster_user: '{{ vault_ocp_cluster_user }}'
+    ocp_cluster_user_password: '{{ vault_ocp_cluster_user_password }}'
+    ocp_cluster_console_url: '{{ vault_ocp_cluster_console_url }}'
+    ocp_cluster_console_port: '6443'
+    openshift_cli: '/usr/bin/oc'
+    bkp_bundle_file_prefix: 'etcd-backup'
+    aws_access_key: '{{ vault_aws_access_key }}'
+    aws_key_secret: '{{ vault_aws_key_secret }}'
+    aws_bucket: '{{ vault_aws_bucket }}'
+    aws_bucket_object: '{{ vault_aws_bucket_object }}'
+    s3_upload: 'true'
+
+  tasks:
+    - name: '{{ ansible_name_module }} | Install required pip library'
+      pip:
+        name: openshift
+        state: present
+    
+    - name: '{{ ansible_name_module }} | Ensure Proper Python dependency is installed for Openshift'
+      python_requirements_facts:
+        dependencies:
+          - openshift
+          - requests
+    
+    - name: '{{ ansible_name_module }} | Authenticate with the API'
+      command: >
+        {{ openshift_cli }} login \
+          -u {{ ocp_cluster_user }} \
+          -p {{ ocp_cluster_user_password }} \
+          --insecure-skip-tls-verify=true {{ ocp_cluster_console_url }}:{{ ocp_cluster_console_port | d('6443', true) }}
+      register: login_out
+
+    - name: '{{ ansible_name_module }} | shell:{{ openshift_cli }} | get the etcd debug ns'
+      shell: >
+        {{ openshift_cli }} get projects --no-headers | grep 'debug' | tail -n 1 | awk '{print $1}'
+      register: etcd_bkp_ns
+
+    - name: '{{ ansible_name_module }} | assert | assert that a debug ns exists'
+      assert:
+        that:
+          - etcd_bkp_ns is defined
+          - etcd_bkp_ns.rc == 0
+          - etcd_bkp_ns.stdout is defined and etcd_bkp_ns.stdout != ""
+          - " 'debug' in etcd_bkp_ns.stdout "
+        fail_msg: "A node debug namespace is required. Run oc debug node ...first"
+
+    - name: '{{ ansible_name_module }} | shell:{{ openshift_cli }} | get the etcd debug pod'
+      shell: >
+        {{ openshift_cli }} get po -n {{ etcd_bkp_ns.stdout }} --no-headers \
+        | awk '{print $1}'
+      when:
+        - etcd_bkp_ns is defined
+        - etcd_bkp_ns.rc == 0
+        - etcd_bkp_ns.stdout is defined and etcd_bkp_ns.stdout != ""
+      register: etcd_bkp_pod
+
+    - name: '{{ ansible_name_module }} | file:state:directory | Ensure staging dir exists'
+      file:
+        path: "{{ bkp_staging_dir_on_controller }}"
+        state: directory
+        mode: 0755
+
+    - name: '{{ ansible_name_module }} | shell:{{ openshift_cli }} | extract backup files from pod'
+      shell: >
+        {{ openshift_cli }} cp -n {{ etcd_bkp_ns.stdout }} \
+        {{ etcd_bkp_pod.stdout }}:{{ bkp_files_dir_on_pod }} {{ bkp_staging_dir_on_controller }}
+      when:
+        - etcd_bkp_pod is defined
+        - etcd_bkp_pod.rc == 0
+        - etcd_bkp_pod.stdout is defined and etcd_bkp_pod.stdout != ""
+      register: etcd_bkp_pod
+
+    - name: '{{ ansible_name_module }} | find | list content of staging directory'
+      find:
+        path: "{{ bkp_staging_dir_on_controller }}"
+        recurse: yes
+      register: bk_file_list
+
+    - name: '{{ ansible_name_module }} | set_fact | Set bundle file name '
+      set_fact:
+        bkp_bundle_file_name: "{{ bkp_bundle_file_prefix }}-{{ lookup('pipe', 'date +%Y%m%d-%H%M') }}"
+
+    - name: '{{ ansible_name_module }} | archive:xz | create backup bundle '
+      become: yes
+      command: >
+        tar -c --use-compress-program='pigz -9' -v \
+          -f "{{ bkp_bundle_dir_on_controller }}/{{ bkp_bundle_file_name }}" \
+          -C {{ bkp_staging_dir_on_controller }} .
+      args:
+        creates: "{{ bkp_bundle_dir_on_controller }}/{{ bkp_bundle_file_name }}"
+        warn: false
+        chdir: "{{ bkp_staging_dir_on_controller }}/"
+
+    - name: '{{ ansible_name_module }} | s3 | load backup file to s3'
+      when:
+        - s3_upload is defined
+        - s3_upload | bool
+      block:
+        - name: '{{ ansible_name_module }} | s3 | install boto3'
+          pip:
+            name: boto3
+            state: present
+            extra_args: --user
+
+        - name: '{{ ansible_name_module }} | s3 | load backup file to s3'
+          aws_s3:
+            aws_access_key: "{{ aws_access_key }}"
+            aws_secret_key: "{{ aws_key_secret }}"
+            #aws_access_key: "{{ lookup('env','aws_key') }}"
+            #aws_secret_key: "{{ lookup('env','aws_secret') }}"
+            bucket: "{{ aws_bucket }}"
+            object: "{{ aws_bucket_object }}"
+            src: "{{ bkp_bundle_dir_on_controller }}/{{ bkp_bundle_file_name }}"
+            mode: put 
+            overwrite: no

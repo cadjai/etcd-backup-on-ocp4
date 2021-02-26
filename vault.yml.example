@@ -1,0 +1,12 @@
+
+### Variable for OCP cluster login 
+
+vault_ocp_cluster_user: ''
+vault_ocp_cluster_user_password: ''
+vault_ocp_cluster_console_url: ''
+
+### Variable for S3 and AWS
+vault_aws_access_key: ''
+vault_aws_key_secret: ''
+vault_aws_bucket: ''
+vault_aws_bucket_object: ''
