@@ -27,7 +27,7 @@
 
     - name: '{{ ansible_name_module }} | find | list content of staging directory'
       set_fact:
-        bundle_files_to_delete: "{{ bk_file_list | map(attribute='path') | list }}"
+        bundle_files_to_delete: "{{ bk_file_list.files | map(attribute='path') | list }}"
 
     - name: '{{ ansible_name_module }} | debug | Print list of backup files 1 of 2'
       debug:
