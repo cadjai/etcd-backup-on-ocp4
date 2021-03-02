@@ -84,5 +84,6 @@
           file:
             path: "{{ item }}"
             state: absent
-          loop: "{{ bkp_bundle_dir_on_controller }}/{{ bkp_bundle_file_name }}"
+          loop: 
+            - "{{ bkp_bundle_dir_on_controller }}/{{ bkp_bundle_file_name }}"
           register: bundle_file_clean
