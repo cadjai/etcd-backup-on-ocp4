@@ -58,8 +58,7 @@
       when:
         - (s3_upload | d('false', true) | bool and aws_s3_loaded is defined and aws_s3_loaded.url is defined and aws_s3_loaded.url != '') or (clean_resources |d ('false', true) | bool ) 
       loop:
-        - "{{ bkp_staging_dir_on_controller }}"
-        - "{{ bkp_bundle_dir_on_controller }}"
-        - "{{ bkp_playbook_dir }}"
+        - "{{ bkp_staging_dir_on_controller }}/*"
+        - "{{ bkp_bundle_dir_on_controller }}/{{ bkp_bundle_file_name }}"
       register: staging_resources_clean
 
