@@ -2,18 +2,19 @@
 
 - name: 'Extract backup file from etcd debugger node and store in S3'
   hosts: localhost
-  become: yes
+  #become: yes
   vars:
-    ansible_python_interpreter: /usr/bin/python3
     module: "store-backup-on-s3"
     ansible_name_module: " ETCD BACKUP | {{ module }}"
-    bkp_files_dir_on_pod: '/host/home/core/assets/etcd-backup'
-    bkp_staging_dir_on_controller: '/host/home/core/assets/etcd-backup'
-    bkp_bundle_dir_on_controller: '/host/var/tmp'
-    bkp_bundle_file_prefix: 'etcd-backup'
-    s3_upload: 'true'
 
   tasks:
+    - name: '{{ ansible_name_module }} | set_fact | variables from ENV'
+      set_fact:
+        bkp_staging_dir_on_controller: "{{ lookup('env', 'ETCD_BACKUP_DIR') }}"
+        bkp_bundle_dir_on_controller: "{{ lookup('env', 'ETCD_BACKUP_BUNDLE_DIR') }}"
+        bkp_bundle_file_prefix: "{{ lookup('env', 'ETCD_BACKUP_FILE_PREFIX') }}"
+        s3_upload: "{{ lookup('env', 'ETCD_BACKUP_S3_UPLOAD') }}"
+
     - name: '{{ ansible_name_module }} | find | list content of staging directory'
       find:
         path: "{{ bkp_staging_dir_on_controller }}"
@@ -25,11 +26,10 @@
         bkp_bundle_file_name: "{{ bkp_bundle_file_prefix }}-{{ lookup('pipe', 'date +%Y%m%d-%H%M') }}"
 
     - name: '{{ ansible_name_module }} | archive:xz | create backup bundle '
-      become: yes
       command: >
         tar -c --use-compress-program='pigz -9' -v \
           -f "{{ bkp_bundle_dir_on_controller }}/{{ bkp_bundle_file_name }}" \
-          -C {{ bkp_staging_dir_on_controller }} .
+          -C {{ bkp_staging_dir_on_controller }}/ .
       args:
         creates: "{{ bkp_bundle_dir_on_controller }}/{{ bkp_bundle_file_name }}"
         warn: false
