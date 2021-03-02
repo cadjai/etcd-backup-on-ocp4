@@ -47,6 +47,10 @@
             overwrite: no
           register: aws_s3_loaded
 
+        - name: '{{ ansible_name_module }} | debug | Print ouput of S3 file loading'
+          debug:
+            var: aws_s3_loaded
+
     - name: '{{ ansible_name_module }} | shell:rm  | clean up staging resources'
       file:
         path: "{{ item }}"
