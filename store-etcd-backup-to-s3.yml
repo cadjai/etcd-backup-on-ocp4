@@ -15,25 +15,29 @@
         bkp_bundle_file_prefix: "{{ lookup('env', 'ETCD_BACKUP_FILE_PREFIX') }}"
         s3_upload: "{{ lookup('env', 'ETCD_BACKUP_S3_UPLOAD') }}"
 
-    - name: '{{ ansible_name_module }} | find | list content of staging directory'
-      find:
-        path: "{{ bkp_staging_dir_on_controller }}"
-        recurse: yes
-      register: bk_file_list
+    #- name: '{{ ansible_name_module }} | find | list content of staging directory'
+    #  find:
+    #    path: "{{ bkp_staging_dir_on_controller }}"
+    #    recurse: yes
+    #  register: bk_file_list
 
     - name: '{{ ansible_name_module }} | set_fact | Set bundle file name '
       set_fact:
-        bkp_bundle_file_name: "{{ bkp_bundle_file_prefix }}-{{ lookup('pipe', 'date +%Y%m%d-%H%M') }}"
+        bkp_bundle_file_name: "{{ bkp_bundle_file_prefix }}-{{ lookup('pipe', 'date +%Y%m%d-%H%M') }}.gz"
 
-    - name: '{{ ansible_name_module }} | archive:xz | create backup bundle '
-      command: >
-        tar -c --use-compress-program='pigz -9' -v \
-          -f "{{ bkp_bundle_dir_on_controller }}/{{ bkp_bundle_file_name }}" \
-          -C {{ bkp_staging_dir_on_controller }}/ .
-      args:
-        creates: "{{ bkp_bundle_dir_on_controller }}/{{ bkp_bundle_file_name }}"
-        warn: false
-        chdir: "{{ bkp_staging_dir_on_controller }}/"
+    - name: '{{ ansible_name_module }} | archive | create backup bundle '
+      #command: >
+      #  tar -c --use-compress-program='pigz -9' -v \
+      #    -f "{{ bkp_bundle_dir_on_controller }}/{{ bkp_bundle_file_name }}" \
+      #    -C {{ bkp_staging_dir_on_controller }}/ .
+      #args:
+      #  creates: "{{ bkp_bundle_dir_on_controller }}/{{ bkp_bundle_file_name }}"
+      #  warn: false
+      #  chdir: "{{ bkp_staging_dir_on_controller }}/"
+      archive:
+        path: "{{ bkp_staging_dir_on_controller }}/*"
+        dest: "{{ bkp_bundle_dir_on_controller }}/{{ bkp_bundle_file_name }}"
+        format: gz
 
     - name: '{{ ansible_name_module }} | s3 | load backup file to s3'
       when:
