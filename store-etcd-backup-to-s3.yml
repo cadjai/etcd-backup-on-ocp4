@@ -74,16 +74,15 @@
         - (s3_upload | d('false', true) | bool and aws_s3_loaded is defined and aws_s3_loaded.url is defined and aws_s3_loaded.url != '') or (clean_resources |d ('false', true) | bool ) 
       block:
         - name: '{{ ansible_name_module }} | shell:rm  | clean up backup files '
-            file:
-              path: "{{ item }}"
-              state: absent
-            loop: "{{ bundle_files_to_delete }}"
-            register: backup_files_clean
+          file:
+            path: "{{ item }}"
+            state: absent
+          loop: "{{ bundle_files_to_delete }}"
+          register: backup_files_clean
 
         - name: '{{ ansible_name_module }} | shell:rm  | clean up bundle file'
-            file:
-              path: "{{ item }}"
-              state: absent
-            loop: "{{ bkp_bundle_dir_on_controller }}/{{ bkp_bundle_file_name }}"
-            register: bundle_file_clean
-
+          file:
+            path: "{{ item }}"
+            state: absent
+          loop: "{{ bkp_bundle_dir_on_controller }}/{{ bkp_bundle_file_name }}"
+          register: bundle_file_clean
