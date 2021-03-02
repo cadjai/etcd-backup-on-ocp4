@@ -19,6 +19,16 @@
       set_fact:
         bkp_bundle_file_name: "{{ bkp_bundle_file_prefix }}-{{ lookup('pipe', 'date +%Y%m%d-%H%M') }}.gz"
 
+    - name: '{{ ansible_name_module }} | find | list content of staging directory'
+      find:
+        path: "{{ bkp_staging_dir_on_controller }}"
+        recurse: yes
+      register: bk_file_list
+
+    - name: '{{ ansible_name_module }} | debug | Print list of backup files'
+      debug:
+        var: bk_file_list
+
     - name: '{{ ansible_name_module }} | archive | create backup bundle '
       archive:
         path: "{{ bkp_staging_dir_on_controller }}/*"
