@@ -25,9 +25,17 @@
         recurse: yes
       register: bk_file_list
 
-    - name: '{{ ansible_name_module }} | debug | Print list of backup files'
+    - name: '{{ ansible_name_module }} | find | list content of staging directory'
+      set_fact:
+        bundle_files_to_delete: "{{ bk_file_list | map(attribute='path') | list }}"
+
+    - name: '{{ ansible_name_module }} | debug | Print list of backup files 1 of 2'
       debug:
         var: bk_file_list
+
+    - name: '{{ ansible_name_module }} | debug | Print list of backup files 2 of 2'
+      debug:
+        var: bundle_files_to_delete 
 
     - name: '{{ ansible_name_module }} | archive | create backup bundle '
       archive:
@@ -68,7 +76,7 @@
       when:
         - (s3_upload | d('false', true) | bool and aws_s3_loaded is defined and aws_s3_loaded.url is defined and aws_s3_loaded.url != '') or (clean_resources |d ('false', true) | bool ) 
       loop:
-        - "{{ bkp_staging_dir_on_controller }}/*"
+        #- "{{ bk_file_list.files }}"
         - "{{ bkp_bundle_dir_on_controller }}/{{ bkp_bundle_file_name }}"
       register: staging_resources_clean
 
