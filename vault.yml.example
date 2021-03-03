@@ -10,3 +10,6 @@ vault_aws_access_key: ''
 vault_aws_key_secret: ''
 vault_aws_bucket: ''
 vault_aws_bucket_object: ''
+
+### Variable for Image handling
+vault_image_pullsecret_json: ''
