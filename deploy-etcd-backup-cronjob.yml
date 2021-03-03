@@ -4,7 +4,7 @@
   vars:
     ansible_python_interpreter: /usr/bin/python3
   vars_files:
-    - '../vars/vault.yml'
+    - 'vault.yml'
   vars:
     module: "deploy-etcd-backup-cron"
     ansible_name_module: "Deploy Etcd Backup Cron Job | {{ module }}"
@@ -49,7 +49,7 @@
         ##### Adding this to bypass restrictions on creating project with names starting with openshift  #####
         - name: '{{ ansible_name_module }} |  Create etcd-backup Namespace'
           command: >
-            {{ openshift_cli }} create namespace '{{ etcdbackup_job_namespace }'
+            {{ openshift_cli }} create namespace '{{ etcdbackup_job_namespace }}'
           failed_when: "etcdbackup_ns_created.rc >=1 and not ' already exists' in etcdbackup_ns_created.stderr"
           when:
             - "'openshift' in etcdbackup_job_namespace"
@@ -88,20 +88,20 @@
         tags: privileged
 
     - name: Add Image Puller Role to the default SA in the namespace Gitlab Runner is run from
-        command: >
-          {{ openshift_cli }} create rolebinding image-puller-{{ etcdbackup_job_namespace }}-{{ item }} \
-            --clusterrole='system:image-puller' \
-            --serviceaccount={{ etcdbackup_job_namespace }}:{{ item }} \
-            -n {{ etcdbackup_job_namespace }}
-        loop:
-          - "{{ default_service_account }}"
-          - "{{ etcdbackup_service_account }}"
-        failed_when:
-          - etcdbackupimage_puller_access_granted.rc >= 1
-          - not 'AlreadyExists' in etcdbackupimage_puller_access_granted.stderr
-        register: etcdbackupimage_puller_access_granted
+      command: >
+        {{ openshift_cli }} create rolebinding image-puller-{{ etcdbackup_job_namespace }}-{{ item }} \
+          --clusterrole='system:image-puller' \
+          --serviceaccount={{ etcdbackup_job_namespace }}:{{ item }} \
+          -n {{ etcdbackup_job_namespace }}
+      loop:
+        - "{{ default_service_account }}"
+        - "{{ etcdbackup_service_account }}"
+      failed_when:
+        - etcdbackupimage_puller_access_granted.rc >= 1
+        - not 'AlreadyExists' in etcdbackupimage_puller_access_granted.stderr
+      register: etcdbackupimage_puller_access_granted
 
-    - name: '{{ ansible_name_module }} | Configure etcd-backu for disconnected install'
+    - name: '{{ ansible_name_module }} | Configure etcd-backup '
       block:
         #- name: '{{ ansible_name_module }} | template | Copy etcd-backupHub template to staging location'
         #  copy: 
