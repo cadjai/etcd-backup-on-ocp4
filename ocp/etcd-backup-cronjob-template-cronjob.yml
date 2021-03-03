@@ -16,6 +16,7 @@ metadata:
     template.openshift.io/support-url: https://access.redhat.com
     version: etcd-backup-cronjob-v1.0.0
     labels:
+  name: etcd-backup-cronjob 
 objects:
 - apiVersion: v1
   kind: ServiceAccount
@@ -23,7 +24,7 @@ objects:
     name: ${SERVICE_ACCOUNT_NAME}
     namespace: ${APPLICATION_NAMESPACE}
 - apiVersion: v1
-  stringData:
+  data:
     .dockerconfigjson: ${IMAGE_PULLSECRET_JSONCONFIG} 
   kind: Secret
   metadata:
