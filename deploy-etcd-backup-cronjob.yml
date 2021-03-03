@@ -26,7 +26,8 @@
     add_privileged_scc_to_etcdbackup_sa: "true"
     etcdbackup_template_path: 'ocp/etcd-backup-cronjob-template-cronjob.yml'
     etcdbackup_service_name: 'etcd-backup'
-    image_pullsecret_json: ''
+    image_pullsecret_json: '{{ vault_image_pullsecret_json }}'
+    #create_pullsecret: 'true'
 
   pre_tasks:
     - name: Install required pip library
@@ -70,6 +71,21 @@
             - "not 'openshift' in etcdbackup_job_namespace"
           register: etcdbackup_ns_created
 
+    - name: '{{ ansible_name_module }} | Create Pull secret'
+      block:
+        - name: '{{ ansible_name_module }} |  Create Pull Secret from config json'
+          command: >
+            {{ openshift_cli }} create \
+             secret generic redhat-registry-io-pull-secret \
+             --type=kubernetes.io/dockerconfigjson \
+             --from-file=.dockerconfigjson={{ image_pullsecret_json }} \
+             -n '{{ etcdbackup_job_namespace }}'
+          failed_when: "pullsecret_created.rc >=1 and not ' already exists' in pullsecret_created.stderr"
+          when:
+            - create_pullsecret is defined
+            - create_pullsecret | bool
+          register: pullsecret_created
+
        ### You need to have cluster admin role to run this task
     - name: Grant SCC Privilege to the Etcd Backup service account
       when:
@@ -108,32 +124,25 @@
 
     - name: '{{ ansible_name_module }} | Configure etcd-backup '
       block:
-        #- name: '{{ ansible_name_module }} | template | Copy etcd-backupHub template to staging location'
-        #  copy: 
-        #    src: "ocp/etcd-backup-cronjob-template-cronjob.yml"
-        #    dest: "/tmp/etcd-backup-cronjob-template-cronjob.yml"
-        #  register: cjt_copied
-
         - name: '{{ ansible_name_module }} | Create Etcdbackup template'
           command: "{{ openshift_cli }} create -f {{ etcdbackup_template_path }} -n {{ etcdbackup_job_namespace }}"
           failed_when: "etcdbackup_template_created.rc >=1 and not ' already exists' in etcdbackup_template_created.stderr"
           register: etcdbackup_template_created
 
         - name: '{{ ansible_name_module }} | command | Patch disconnected etcd-backupHub'
-          command: >
+          #-p ETCD_BACKUP_CRON_EXPRESSION='{{ cron_expression }}' \
+          #-p ETCD_BACKUP_S3_UPLOAD='{{ upload_to_s3 }}' \
+          shell: >
             {{ openshift_cli }} process -f {{ etcdbackup_template_path }} \
-            --template=etcd-backup-cronjob \
-            -p NAMESPACE={{ etcdbackup_job_namespace }} \
             -p APPLICATION_NAME='{{ etcdbackup_service_name }}' \
             -p APPLICATION_NAMESPACE={{ etcdbackup_job_namespace }} \
             -p IMAGE_PULLSECRET_JSONCONFIG={{ image_pullsecret_json }} \
-            -p ETCD_BACKUP_CRON_EXPRESSION='{{ cron_expression | d(omit, true) }}' \
-            -p ETCD_BACKUP_S3_UPLOAD='{{ upload_to_s3 | d(omit, true) }}' \
-            -p AWS_ACCESS_KEY='{{ aws_access_key | d(omit, true) }}' \
-            -p AWS_KEY_SECRET='{{ aws_key_secret | d(omit, true) }}' \
-            -p AWS_BUCKET='{{ aws_bucket | d(omit, true) }}' \
-            -p AWS_BUCKET_OBJECT='{{ aws_bucket_object | d(omit, true) }}' \
-            -p SERVICE_ACCOUNT_NAME={{ etcdbackup_service_account | default(gitlab,true) }} \
+            -p AWS_ACCESS_KEY='{{ aws_access_key }}' \
+            -p AWS_KEY_SECRET='{{ aws_key_secret }}' \
+            -p AWS_BUCKET='{{ aws_bucket }}' \
+            -p AWS_BUCKET_OBJECT='{{ aws_bucket_object }}' \
+            -p SERVICE_ACCOUNT_NAME={{ etcdbackup_service_account }} \
             -n '{{ etcdbackup_job_namespace }}'
-          register: oph_updated
+            | oc create -f - \
+          register: etcbackup_cron_created
 
