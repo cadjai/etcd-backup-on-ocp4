@@ -12,11 +12,16 @@
     etcdbackup_job_namespace_description: 'ETCD Backup Cron Jon Namespace'
     etcdbackup_service_account: 'etcdbackup-sa'
     default_service_account: 'default'
-    openshift_cli: "oc"
-    #ocp_cluster_user_password:
-    #ocp_cluster_user:
-    #ocp_cluster_console_url: ""
-    #ocp_cluster_console_port: "6443"
+    ocp_cluster_user: '{{ vault_ocp_cluster_user }}'
+    ocp_cluster_user_password: '{{ vault_ocp_cluster_user_password }}'
+    ocp_cluster_console_url: '{{ vault_ocp_cluster_console_url }}'
+    ocp_cluster_console_port: '6443'
+    openshift_cli: '/usr/bin/oc'
+    bkp_bundle_file_prefix: 'etcd-backup'
+    aws_access_key: '{{ vault_aws_access_key }}'
+    aws_key_secret: '{{ vault_aws_key_secret }}'
+    aws_bucket: '{{ vault_aws_bucket }}'
+    aws_bucket_object: '{{ vault_aws_bucket_object }}'
     scc_name: "privileged"
     add_privileged_scc_to_etcdbackup_sa: "true"
     etcdbackup_template_path: 'ocp/etcd-backup-cronjob-template-cronjob.yml'
