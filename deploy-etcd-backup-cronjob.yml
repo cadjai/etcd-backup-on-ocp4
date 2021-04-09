@@ -109,7 +109,7 @@
         register: privileged_access_granted
         tags: privileged
 
-    - name: Add Image Puller Role to the default SA in the namespace Gitlab Runner is run from
+    - name: Add Image Puller Role to the default SA in the namespace the etcdbackup cronjob is run from
       command: >
         {{ openshift_cli }} create rolebinding image-puller-{{ etcdbackup_job_namespace }}-{{ item }} \
           --clusterrole='system:image-puller' \
@@ -130,7 +130,7 @@
           failed_when: "etcdbackup_template_created.rc >=1 and not ' already exists' in etcdbackup_template_created.stderr"
           register: etcdbackup_template_created
 
-        - name: '{{ ansible_name_module }} | command | Patch disconnected etcd-backupHub'
+        - name: '{{ ansible_name_module }} | shell | Process etcd-backup template'
           #-p ETCD_BACKUP_CRON_EXPRESSION='{{ cron_expression }}' \
           #-p ETCD_BACKUP_S3_UPLOAD='{{ upload_to_s3 }}' \
           shell: >
