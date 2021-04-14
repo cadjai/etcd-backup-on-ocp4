@@ -41,7 +41,7 @@ Finally before running the playbook make sure to set and update the variables as
 Playbooks
 ---------
 To run the main playbook use the ansible-playbook command as follows   
-`ansible-plabook deploy-etcd-backup-cronjob.yml`  
+`ansible-playbook deploy-etcd-backup-cronjob.yml --vault-id @prompt -vvv`  
 
 
 License
