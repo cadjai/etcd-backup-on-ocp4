@@ -129,10 +129,12 @@ objects:
             - args:
               - /bin/sh
               - -c
-              - cd $ETCD_BACKUP_PLAYBOOK_DIR_NONROOT && rm -rf * && git clone https://github.com/cadjai/etcd-backup-on-ocp4.git
+              - cd $ETCD_BACKUP_PLAYBOOK_DIR_NONROOT && rm -rf * && git clone $REPOSITORY_URL
               env:
               - name: ETCD_BACKUP_PLAYBOOK_DIR_NONROOT
                 value: ${ETCD_BACKUP_PLAYBOOK_DIR}
+              - name: REPOSITORY_URL 
+                value: ${REPOSITORY_URL}
               image: ${BACKUP_IMAGE_REGISTRY_REPO}/${BACKUP_IMAGE}
               imagePullPolicy: IfNotPresent
               name: ${APPLICATION_NAME}-clone-repo
@@ -253,3 +255,7 @@ parameters:
   displayName: AWS S3 Storage Bucket Object 
   name: AWS_BUCKET_OBJECT
   required: false
+- description: The Source repo where the code is checkout from 
+  displayName: Code source repository
+  name: REPOSITORY_URL
+  required: true
