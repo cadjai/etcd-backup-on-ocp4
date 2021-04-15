@@ -23,33 +23,6 @@ objects:
   metadata:
     name: ${SERVICE_ACCOUNT_NAME}
     namespace: ${APPLICATION_NAMESPACE}
-- apiVersion: v1
-  data:
-    .dockerconfigjson: ${IMAGE_PULLSECRET_JSONCONFIG} 
-  kind: Secret
-  metadata:
-    name: ${IMAGE_PULLSECRET_NAME} 
-    namespace: ${APPLICATION_NAMESPACE}
-  type: kubernetes.io/dockerconfigjson
-- apiVersion: image.openshift.io/v1
-  kind: ImageStream
-  metadata:
-    annotations:
-    name: ${BACKUP_IMAGE}
-    namespace: ${APPLICATION_NAMESPACE}
-  spec:
-    lookupPolicy:
-      local: false
-    tags:
-    - annotations: 
-        openshift.io/imported-from: ${BACKUP_IMAGE_REGISTRY_REPO}/${BACKUP_IMAGE}
-      from:
-        kind: DockerImage
-        name: ${BACKUP_IMAGE_REGISTRY_REPO}/${BACKUP_IMAGE}
-      importPolicy: {}
-      name: latest
-      referencePolicy:
-        type: Source
 - apiVersion: batch/v1beta1
   kind: CronJob
   metadata:
@@ -71,9 +44,15 @@ objects:
               - 'chroot /host /usr/local/bin/cluster-backup.sh /home/core/assets/backup && aws s3 sync /host/home/core/assets/backup/ "s3://$AWS_BUCKET/$AWS_BUCKET_OBJECT/"'
               env:
               - name: AWS_ACCESS_KEY_ID
-                value: ${AWS_ACCESS_KEY} 
+                valueFrom: 
+                  secretKeyRef:
+                    name: ${AWS_ACCT_CREDS_SECRET}
+                    key: aws_access_key 
               - name: AWS_SECRET_ACCESS_KEY
-                value: ${AWS_KEY_SECRET} 
+                valueFrom: 
+                  secretKeyRef:
+                    name: ${AWS_ACCT_CREDS_SECRET}
+                    key: aws_access_secret 
               - name: AWS_BUCKET
                 value: ${AWS_BUCKET} 
               - name: AWS_BUCKET_OBJECT
@@ -140,14 +119,6 @@ parameters:
   displayName: Cron Expression
   name: ETCD_BACKUP_CRON_EXPRESSION
   value: 01 23 * * * 
-- description: The AWS Access Key 
-  displayName: AWS Key Value
-  name: AWS_ACCESS_KEY
-  required: true
-- description: The AWS Key Secret 
-  displayName: AWS Key Secret
-  name: AWS_KEY_SECRET
-  required: true
 - description: The AWS S3 Storage Bucket 
   displayName: AWS S3 Storage Bucket
   name: AWS_BUCKET
@@ -162,5 +133,5 @@ parameters:
   value: "us-east-1"
 - description: The AWS Account credential secret name 
   displayName: AWS Account Credentials Secret
-  name: AWS_ACCT_CREDS
+  name: AWS_ACCT_CREDS_SECRET
   value: "aws-acct-creds"
