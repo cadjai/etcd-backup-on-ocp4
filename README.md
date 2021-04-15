@@ -3,6 +3,7 @@
 This repository provides and automated way to perform etcd backup on OpenShift Container 4.x which has a commumity operator to perform the backup and store the backup files into S3. However the operator does not always work and there are a few bugzilla (https://bugzilla.redhat.com/show_bug.cgi?id=1686312) and RFE (https://issues.redhat.com/browse/ETCD-123 and  https://issues.redhat.com/browse/ETCD-81). 
 This has a playbook to deploy and configure the cronjob that is used to perform the backup and content push to S3.
 It also has a playbook to perform the content move from the debug node to the either a local ansible controller or to S3.
+Add a new playbook that deploy the cron job using the AWS CLI docker container instead of the original playbook that uses two images. This only pushes the backup files as created not like the original which creates a bundle of all file with the date before pushing.
 
 
 Play Variables
@@ -42,6 +43,9 @@ Playbooks
 ---------
 To run the main playbook use the ansible-playbook command as follows   
 `ansible-playbook deploy-etcd-backup-cronjob.yml --vault-id @prompt -vvv`  
+
+To run the AWS CLI based playbook use the ansible-playbook command as follows   
+`ansible-playbook deploy-etcd-backup-cronjob-awscli.yml --vault-id @prompt -vvv`  
 
 
 License
