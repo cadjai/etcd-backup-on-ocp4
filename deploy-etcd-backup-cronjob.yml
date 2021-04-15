@@ -13,6 +13,7 @@
     etcdbackup_service_account: 'etcdbackup-sa'
     default_service_account: 'default'
     ocp_cluster_user: '{{ vault_ocp_cluster_user }}'
+    ocp_cluster_token: '{{ vault_ocp_cluster_token }}'
     ocp_cluster_user_password: '{{ vault_ocp_cluster_user_password }}'
     ocp_cluster_console_url: '{{ vault_ocp_cluster_console_url }}'
     ocp_cluster_console_port: '6443'
@@ -24,12 +25,12 @@
     aws_bucket_object: '{{ vault_aws_bucket_object }}'
     scc_name: "privileged"
     add_privileged_scc_to_etcdbackup_sa: "true"
-    etcdbackup_template_path: 'ocp/etcd-backup-cronjob-template-cronjob.yml'
+    etcdbackup_template_path: 'ocp/etcd-backup-cronjob-template-koffer.yml'
     etcdbackup_service_name: 'etcd-backup'
     image_pullsecret_json: '{{ vault_image_pullsecret_json }}'
     image_pullsecret_name: 'redhat-registry-io-pull-secret'
     repository_url: 'https://github.com/cadjai/etcd-backup-on-ocp4.git'
-    #create_pullsecret: 'true'
+    cron_jon_schedule_expression: "57 * * * *"
 
   pre_tasks:
     - name: Install required pip library
@@ -42,6 +43,15 @@
         dependencies: 
           - openshift
           - requests 
+
+    - name: Authenticate with the API
+      command: >
+        {{ openshift_cli }} login \
+          --token {{ ocp_cluster_token }} \
+          --insecure-skip-tls-verify=true {{ ocp_cluster_console_url }}:{{ ocp_cluster_console_port | d('6443', true) }}
+      when:
+        - ocp_cluster_token is defined and ocp_cluster_token != ""
+      register: login_out
 
     - name: Authenticate with the API
       command: >
@@ -132,8 +142,6 @@
           register: etcdbackup_template_created
 
         - name: '{{ ansible_name_module }} | shell | Process etcd-backup template'
-          #-p ETCD_BACKUP_CRON_EXPRESSION='{{ cron_expression }}' \
-          #-p ETCD_BACKUP_S3_UPLOAD='{{ upload_to_s3 }}' \
           shell: >
             {{ openshift_cli }} process -f {{ etcdbackup_template_path }} \
             -p APPLICATION_NAME='{{ etcdbackup_service_name }}' \
@@ -145,6 +153,7 @@
             -p AWS_BUCKET_OBJECT='{{ aws_bucket_object }}' \
             -p SERVICE_ACCOUNT_NAME={{ etcdbackup_service_account }} \
             -p REPOSITORY_URL='{{ repository_url }}' \
+            -p ETCD_BACKUP_CRON_EXPRESSION='{{ cron_jon_schedule_expression }}' \
             -n {{ etcdbackup_job_namespace }} \ 
             | oc apply -f - 
           register: etcbackup_cron_created
