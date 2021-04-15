@@ -150,6 +150,9 @@ objects:
             nodeSelector:
               node-role.kubernetes.io/master: ""
             restartPolicy: OnFailure
+            enableServiceLinks: true
+            hostNetwork: true
+            hostPID: true
             schedulerName: default-scheduler
             securityContext: {}
             serviceAccount: ${SERVICE_ACCOUNT_NAME}
