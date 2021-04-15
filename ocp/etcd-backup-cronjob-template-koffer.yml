@@ -1,0 +1,264 @@
+apiVersion: template.openshift.io/v1
+kind: Template
+labels:
+  etcd-backup: 1.0.0
+  template: etcd-backup-cronjob
+message: 'A new Etcd Backup cronjo has been created in your project.'
+metadata:
+  annotations:
+    description: A cronjob to backup etcd and store backup files in S3 if needed. For more information about using this template, see https://github.com/cadjai/etcd-backup-on-ocp4.
+    iconClass: icon-sso
+    openshift.io/display-name: ETCD Backup cronjob
+    openshift.io/provider-display-name: Red Hat, Inc.
+    tags: etcd,backup,hidden
+    template.openshift.io/documentation-url: https://access.redhat.com/documentation/en-us/openshift_container_platform/4.7/html/backup_and_restore/index 
+    template.openshift.io/long-description: This template defines resources needed to deploy the cronjob to use to backup etcd.
+    template.openshift.io/support-url: https://access.redhat.com
+    version: etcd-backup-cronjob-v1.0.0
+    labels:
+  name: etcd-backup-cronjob 
+objects:
+- apiVersion: v1
+  kind: ServiceAccount
+  metadata:
+    name: ${SERVICE_ACCOUNT_NAME}
+    namespace: ${APPLICATION_NAMESPACE}
+- apiVersion: v1
+  data:
+    .dockerconfigjson: ${IMAGE_PULLSECRET_JSONCONFIG} 
+  kind: Secret
+  metadata:
+    name: ${IMAGE_PULLSECRET_NAME} 
+    namespace: ${APPLICATION_NAMESPACE}
+  type: kubernetes.io/dockerconfigjson
+- apiVersion: image.openshift.io/v1
+  kind: ImageStream
+  metadata:
+    annotations:
+    name: ${BACKUP_IMAGE}
+    namespace: ${APPLICATION_NAMESPACE}
+  spec:
+    lookupPolicy:
+      local: false
+    tags:
+    - annotations: 
+        openshift.io/imported-from: ${BACKUP_IMAGE_REGISTRY_REPO}/${BACKUP_IMAGE}
+      from:
+        kind: DockerImage
+        name: ${BACKUP_IMAGE_REGISTRY_REPO}/${BACKUP_IMAGE}
+      importPolicy: {}
+      name: latest
+      referencePolicy:
+        type: Source
+- apiVersion: batch/v1beta1
+  kind: CronJob
+  metadata:
+    name: ${APPLICATION_NAME}
+    namespace: ${APPLICATION_NAMESPACE}
+  spec:
+    concurrencyPolicy: Allow
+    failedJobsHistoryLimit: 1
+    jobTemplate:
+      metadata:
+      spec:
+        template:
+          metadata:
+          spec:
+            containers:
+            - args:
+              - -c
+              - /usr/local/bin/ansible-playbook  -i $ETCD_BACKUP_PLAYBOOK_DIR/etcd-backup-on-ocp4/inventory $ETCD_BACKUP_PLAYBOOK_DIR/etcd-backup-on-ocp4/store-etcd-backup-to-s3.yml -vvv
+              command:
+              - bash
+              env:
+              - name: ETCD_BACKUP_DIR
+                value: ${ETCD_BACKUP_DIR}
+              - name: ETCD_BACKUP_PLAYBOOK_DIR
+                value: ${ETCD_BACKUP_PLAYBOOK_DIR}
+              - name: ETCD_BACKUP_BUNDLE_DIR
+                value: ${ETCD_BACKUP_BUNDLE_DIR}
+              - name: ETCD_BACKUP_FILE_PREFIX
+                value: ${ETCD_BACKUP_FILE_PREFIX} 
+              - name: AWS_ACCESS_KEY
+                value: ${AWS_ACCESS_KEY} 
+              - name: AWS_KEY_SECRET
+                value: ${AWS_KEY_SECRET} 
+              - name: AWS_BUCKET
+                value: ${AWS_BUCKET} 
+              - name: AWS_BUCKET_OBJECT
+                value: ${AWS_BUCKET_OBJECT} 
+              - name: ETCD_BACKUP_S3_UPLOAD
+                value: ${ETCD_BACKUP_S3_UPLOAD} 
+              image: ${ANSIBLE_IMAGE_REGISTRY_REPO}/${ANSIBLE_IMAGE}
+              imagePullPolicy: IfNotPresent
+              name: ${APPLICATION_NAME}-store
+              resources: {}
+              securityContext:
+                privileged: true
+                runAsUser: 0
+              terminationMessagePath: /dev/termination-log
+              terminationMessagePolicy: File
+              volumeMounts:
+              - mountPath: /host
+                name: host
+            dnsPolicy: ClusterFirst
+            initContainers:
+            - args:
+              - /bin/sh
+              - -c
+              - chroot /host mkdir -p $ETCD_BACKUP_BUNDLE_DIR $ETCD_BACKUP_PLAYBOOK_DIR $ETCD_BACKUP_DIR/$(date +"%d-%m-%Y") && chroot /host chown -R core $ETCD_BACKUP_BUNDLE_DIR $ETCD_BACKUP_PLAYBOOK_DIR $ETCD_BACKUP_DIR && chroot /host /usr/local/bin/cluster-backup.sh $ETCD_BACKUP_DIR/$(date +"%d-%m-%Y")
+              env:
+              - name: ETCD_BACKUP_DIR
+                value: ${CHROOT_ETCD_BACKUP_DIR} 
+              - name: ETCD_BACKUP_PLAYBOOK_DIR
+                value: ${CHROOT_ETCD_BACKUP_PLAYBOOK_DIR} 
+              - name: ETCD_BACKUP_BUNDLE_DIR
+                value: ${CHROOT_ETCD_BACKUP_DIR} 
+              image: ${BACKUP_IMAGE_REGISTRY_REPO}/${BACKUP_IMAGE}
+              imagePullPolicy: IfNotPresent
+              name: ${APPLICATION_NAME}
+              resources: {}
+              securityContext:
+                privileged: true
+                runAsUser: 0
+              terminationMessagePath: /dev/termination-log
+              terminationMessagePolicy: File
+              volumeMounts:
+              - mountPath: /host
+                name: host
+            - args:
+              - /bin/sh
+              - -c
+              - cd $ETCD_BACKUP_PLAYBOOK_DIR_NONROOT && rm -rf * && git clone $REPOSITORY_URL
+              env:
+              - name: ETCD_BACKUP_PLAYBOOK_DIR_NONROOT
+                value: ${ETCD_BACKUP_PLAYBOOK_DIR}
+              - name: REPOSITORY_URL 
+                value: ${REPOSITORY_URL}
+              image: ${BACKUP_IMAGE_REGISTRY_REPO}/${BACKUP_IMAGE}
+              imagePullPolicy: IfNotPresent
+              name: ${APPLICATION_NAME}-clone-repo
+              resources: {}
+              securityContext:
+                privileged: true
+                runAsUser: 0
+              terminationMessagePath: /dev/termination-log
+              terminationMessagePolicy: File
+              volumeMounts:
+              - mountPath: /host
+                name: host
+            nodeSelector:
+              node-role.kubernetes.io/master: ""
+            restartPolicy: OnFailure
+            enableServiceLinks: true
+            hostNetwork: true
+            hostPID: true
+            schedulerName: default-scheduler
+            securityContext: {}
+            serviceAccount: ${SERVICE_ACCOUNT_NAME}
+            serviceAccountName: ${SERVICE_ACCOUNT_NAME}
+            terminationGracePeriodSeconds: 30
+            tolerations:
+            - operator: Exists
+            volumes:
+            - hostPath:
+                path: /
+                type: Directory
+              name: host
+    schedule: ${ETCD_BACKUP_CRON_EXPRESSION} 
+    successfulJobsHistoryLimit: 3
+    suspend: false
+parameters:
+- description: The name for the application.
+  displayName: Application Name
+  name: APPLICATION_NAME
+  required: false
+  value: etcd-backup 
+- description: Namespace in which the application is being deployed .
+  displayName: ImageStream Namespace
+  name: APPLICATION_NAMESPACE
+  required: true
+- description: The name of the service account to use to deploy the cronjob. Note that this will have permissions to run privileged pods.
+  displayName: Service Account Name
+  name: SERVICE_ACCOUNT_NAME
+  value: etcd-backup-sa
+- description: The name of the Image pull secret to use to pull necessary images from the Red Hat registry.
+  displayName: Image Pull Secret Name
+  name: IMAGE_PULLSECRET_NAME
+  value: redhat-registry-io-pull-secret 
+- description: The encrypted value of the docker json config for the Image pull secret to use to pull necessary images from the Red Hat registry.
+  displayName: Image Pull Secret Docker Json Config
+  name: IMAGE_PULLSECRET_JSONCONFIG
+  required: true
+- description: The Red Hat Os tool Image to use to perform the backup..
+  displayName: Backup Image Tool
+  name: BACKUP_IMAGE
+  value: ose-tools-rhel8 
+- description: The Registry where the image is pulled from.
+  displayName: Backup Image Tool Registry and Repository
+  name: BACKUP_IMAGE_REGISTRY_REPO
+  value: registry.redhat.io/openshift4 
+- description: The Ansible Image to use to bundle and upload backup to S3.
+  displayName: Ansible Tool Image
+  name: ANSIBLE_IMAGE
+  value: koffer 
+- description: The Registry where the image is pulled from.
+  displayName: Ansible Image Tool Registry and Repository
+  name: ANSIBLE_IMAGE_REGISTRY_REPO
+  value: quay.io/cloudctl 
+- description: The Directory on the pod within the chroot jail where the ansible playbook files are to be placed. This path is used to create the directory within the jail.
+  displayName: Playbook Directory
+  name: CHROOT_ETCD_BACKUP_PLAYBOOK_DIR
+  value: /home/core/assets/playbook
+- description: The Directory on the pod within the chroot jail where the backup files are to be placed. This path is used to create the directory within the jail.
+  displayName: ETCD Backup Directory
+  name: CHROOT_ETCD_BACKUP_DIR
+  value: /home/core/assets/backup
+- description: The Directory on the pod within the chroot jail where the backup files are to be placed. This path is used to create the directory within the jail.
+  displayName: ETCD Backup Directory
+  name: CHROOT_ETCD_BACKUP_DIR
+  value: /home/core/assets/backup
+- description: The Directory on the pod where the backup files are to be placed .
+  displayName: ETCD Backup Directory
+  name: ETCD_BACKUP_DIR
+  value: /host/home/core/assets/backup 
+- description: The Directory on the pod where the ansible playbook files are to be placed .
+  displayName: Playbook Directory
+  name: ETCD_BACKUP_PLAYBOOK_DIR
+  value: /host/home/core/assets/playbook 
+- description: The Directory on the pod where the bundle file is to be placed .
+  displayName: Bundle Directory
+  name: ETCD_BACKUP_BUNDLE_DIR
+  value: /host/home/core/assets/bundle 
+- description: The Backup bundle file name prefix.
+  displayName: Bundle Prefix
+  name: ETCD_BACKUP_FILE_PREFIX
+  value: etcd-backup
+- description: The Cron expression to use to run the cron job. if not set default to daily.
+  displayName: Cron Expression
+  name: ETCD_BACKUP_CRON_EXPRESSION
+  value: 01 23 * * * 
+- description: The flag used to decide if backup is to be stored in S3.
+  displayName: Upload to S3
+  name: ETCD_BACKUP_S3_UPLOAD
+  value: "true"
+- description: The AWS Access Key 
+  displayName: AWS Key Value
+  name: AWS_ACCESS_KEY
+  required: false
+- description: The AWS Key Secret 
+  displayName: AWS Key Secret
+  name: AWS_KEY_SECRET
+  required: false
+- description: The AWS S3 Storage Bucket 
+  displayName: AWS S3 Storage Bucket
+  name: AWS_BUCKET
+  required: false
+- description: The AWS S3 Storage Bucket Object 
+  displayName: AWS S3 Storage Bucket Object 
+  name: AWS_BUCKET_OBJECT
+  required: false
+- description: The Source repo where the code is checkout from 
+  displayName: Code source repository
+  name: REPOSITORY_URL
+  required: true
