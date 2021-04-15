@@ -8,7 +8,7 @@
   vars:
     module: "deploy-etcd-backup-cron"
     ansible_name_module: "Deploy Etcd Backup Cron Job | {{ module }}"
-    etcdbackup_job_namespace: 'etcd-backup-claude'
+    etcdbackup_job_namespace: 'etcd-backup'
     etcdbackup_job_namespace_description: 'ETCD Backup Cron Jon Namespace'
     etcdbackup_service_account: 'etcdbackup-sa'
     default_service_account: 'default'
@@ -30,7 +30,7 @@
     image_pullsecret_json: '{{ vault_image_pullsecret_json }}'
     image_pullsecret_name: 'redhat-registry-io-pull-secret'
     repository_url: 'https://github.com/cadjai/etcd-backup-on-ocp4.git'
-    cron_jon_schedule_expression: "57 * * * *"
+    cron_jon_schedule_expression: "41 * * * *"
 
   pre_tasks:
     - name: Install required pip library
