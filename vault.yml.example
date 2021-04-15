@@ -4,6 +4,7 @@
 vault_ocp_cluster_user: ''
 vault_ocp_cluster_user_password: ''
 vault_ocp_cluster_console_url: ''
+vault_ocp_cluster_token: ''
 
 ### Variable for S3 and AWS
 vault_aws_access_key: ''
