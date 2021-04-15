@@ -113,7 +113,7 @@ objects:
               - name: ETCD_BACKUP_PLAYBOOK_DIR
                 value: ${CHROOT_ETCD_BACKUP_PLAYBOOK_DIR} 
               - name: ETCD_BACKUP_BUNDLE_DIR
-                value: ${CHROOT_ETCD_BACKUP_DIR} 
+                value: ${CHROOT_ETCD_BACKUP_BUNDLE_DIR} 
               image: ${BACKUP_IMAGE_REGISTRY_REPO}/${BACKUP_IMAGE}
               imagePullPolicy: IfNotPresent
               name: ${APPLICATION_NAME}
@@ -215,9 +215,9 @@ parameters:
   name: CHROOT_ETCD_BACKUP_DIR
   value: /home/core/assets/backup
 - description: The Directory on the pod within the chroot jail where the backup files are to be placed. This path is used to create the directory within the jail.
-  displayName: ETCD Backup Directory
-  name: CHROOT_ETCD_BACKUP_DIR
-  value: /home/core/assets/backup
+  displayName: ETCD Backup Bundle Directory
+  name: CHROOT_ETCD_BACKUP_BUNDLE_DIR
+  value: /home/core/assets/bundle
 - description: The Directory on the pod where the backup files are to be placed .
   displayName: ETCD Backup Directory
   name: ETCD_BACKUP_DIR
