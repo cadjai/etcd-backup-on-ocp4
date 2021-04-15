@@ -1,0 +1,163 @@
+- name: ' Deploy Etcd Backup Cron Job  | deploy-etcd-backup-cronjob.yml'
+  hosts: localhost
+  become: yes
+  vars:
+    ansible_python_interpreter: /usr/bin/python3
+  vars_files:
+    - 'vault.yml'
+  vars:
+    module: "deploy-etcd-backup-cron"
+    ansible_name_module: "Deploy Etcd Backup Cron Job | {{ module }}"
+    etcdbackup_job_namespace: 'etcd-backup-claude'
+    etcdbackup_job_namespace_description: 'ETCD Backup Cron Jon Namespace'
+    etcdbackup_service_account: 'etcdbackup-sa'
+    default_service_account: 'default'
+    ocp_cluster_user: '{{ vault_ocp_cluster_user }}'
+    ocp_cluster_token: '{{ vault_ocp_cluster_token }}'
+    ocp_cluster_user_password: '{{ vault_ocp_cluster_user_password }}'
+    ocp_cluster_console_url: '{{ vault_ocp_cluster_console_url }}'
+    ocp_cluster_console_port: '6443'
+    openshift_cli: '/usr/bin/oc'
+    bkp_bundle_file_prefix: 'etcd-backup'
+    aws_access_key: '{{ vault_aws_access_key }}'
+    aws_key_secret: '{{ vault_aws_key_secret }}'
+    aws_bucket: '{{ vault_aws_bucket }}'
+    aws_bucket_object: '{{ vault_aws_bucket_object }}'
+    scc_name: "privileged"
+    add_privileged_scc_to_etcdbackup_sa: "true"
+    etcdbackup_template_path: 'ocp/etcd-backup-cronjob-template-awscli.yml'
+    etcdbackup_service_name: 'etcd-backup'
+    aws_account_creds_secret: 'aws-acct-creds'
+    cron_jon_schedule: '0 0 * * *'
+
+  pre_tasks:
+    - name: Install required pip library
+      pip:
+        name: openshift
+        state: present
+
+    - name: Ensure Proper Python dependency is installed for Openshift
+      python_requirements_facts:
+        dependencies: 
+          - openshift
+          - requests 
+
+    - name: Authenticate with the API
+      command: >
+        {{ openshift_cli }} login \
+          --token {{ ocp_cluster_token }} \
+          --insecure-skip-tls-verify=true {{ ocp_cluster_console_url }}:{{ ocp_cluster_console_port | d('6443', true) }}
+      when:
+        - ocp_cluster_token is defined and ocp_cluster_token != ""
+      register: login_out
+
+    - name: Authenticate with the API
+      command: >
+        {{ openshift_cli }} login \
+          -u {{ ocp_cluster_user }} \
+          -p {{ ocp_cluster_user_password }} \
+          --insecure-skip-tls-verify=true {{ ocp_cluster_console_url }}:{{ ocp_cluster_console_port | d('6443', true) }}
+      register: login_out
+
+  tasks:
+    - name: '{{ ansible_name_module }} | Create Etcd Backup Namespace'
+      block:
+        ##### Adding this to bypass restrictions on creating project with names starting with openshift  #####
+        - name: '{{ ansible_name_module }} |  Create etcd-backup Namespace'
+          command: >
+            {{ openshift_cli }} create namespace '{{ etcdbackup_job_namespace }}'
+          failed_when: "etcdbackup_ns_created.rc >=1 and not ' already exists' in etcdbackup_ns_created.stderr"
+          when:
+            - "'openshift' in etcdbackup_job_namespace"
+          register: etcdbackup_ns_created
+
+        - name: '{{ ansible_name_module }} |  Create etcd-backup Namespace'
+          command: >
+            {{ openshift_cli }} new-project '{{ etcdbackup_job_namespace }}' \
+              --display-name='{{ etcdbackup_job_namespace_description }}' \
+              --description='{{ etcdbackup_job_namespace_description }}'
+          failed_when: "etcdbackup_ns_created.rc >=1 and not ' already exists' in etcdbackup_ns_created.stderr"
+          when:
+            - "not 'openshift' in etcdbackup_job_namespace"
+          register: etcdbackup_ns_created
+
+    - name: '{{ ansible_name_module }} | Create k8 secret for AWS access credentials'
+      block:
+        - name: '{{ ansible_name_module }} |  Create from AWS Access key'
+          command: >
+            {{ openshift_cli }} create \
+             secret generic {{ aws_account_creds_secret }} \
+             --from-literal=aws_access_key={{ aws_access_key }} \
+             --from-literal=aws_access_secret={{ aws_key_secret }} \
+             -n '{{ etcdbackup_job_namespace }}'
+          failed_when: "secret_created.rc >=1 and not ' already exists' in secret_created.stderr"
+          register: secret_created
+
+       ### You need to have cluster admin role to run this task
+    - name: Grant SCC Privilege to the Etcd Backup service account
+      when:
+         - add_privileged_scc_to_etcdbackup_sa is defined
+         - add_privileged_scc_to_etcdbackup_sa | default('false') | bool
+      block:
+      - name: Grant Privileged SCC access
+        command: >
+          {{ openshift_cli }} adm policy \
+            add-scc-to-user {{ scc_name }} \
+            'system:serviceaccount:{{ etcdbackup_job_namespace }}:{{ item }}'
+        failed_when:
+          - privileged_access_granted.rc >= 1
+          - not 'AlreadyExists' in privileged_access_granted.stderr
+        with_items:
+          - "{{ etcdbackup_service_account }}"
+        when:
+          - add_privileged_scc_to_etcdbackup_sa | bool
+          - item != ""
+        register: privileged_access_granted
+        tags: privileged
+
+    - name: Add Image Puller Role to the default SA in the namespace the etcdbackup cronjob is run from
+      command: >
+        {{ openshift_cli }} create rolebinding image-puller-{{ etcdbackup_job_namespace }}-{{ item }} \
+          --clusterrole='system:image-puller' \
+          --serviceaccount={{ etcdbackup_job_namespace }}:{{ item }} \
+          -n {{ etcdbackup_job_namespace }}
+      loop:
+        - "{{ default_service_account }}"
+        - "{{ etcdbackup_service_account }}"
+      failed_when:
+        - etcdbackupimage_puller_access_granted.rc >= 1
+        - not 'AlreadyExists' in etcdbackupimage_puller_access_granted.stderr
+      register: etcdbackupimage_puller_access_granted
+
+    - name: '{{ ansible_name_module }} | Configure etcd-backup '
+      block:
+        - name: '{{ ansible_name_module }} | Create Etcdbackup template'
+          command: "{{ openshift_cli }} create -f {{ etcdbackup_template_path }} -n {{ etcdbackup_job_namespace }}"
+          failed_when: "etcdbackup_template_created.rc >=1 and not ' already exists' in etcdbackup_template_created.stderr"
+          register: etcdbackup_template_created
+
+        - name: '{{ ansible_name_module }} | shell | Process etcd-backup template'
+          #-p ETCD_BACKUP_CRON_EXPRESSION='{{ cron_expression }}' \
+          #-p ETCD_BACKUP_S3_UPLOAD='{{ upload_to_s3 }}' \
+          shell: >
+            {{ openshift_cli }} process -f {{ etcdbackup_template_path }} \
+            -p APPLICATION_NAME='{{ etcdbackup_service_name }}' \
+            -p APPLICATION_NAMESPACE={{ etcdbackup_job_namespace }} \
+            -p AWS_ACCESS_KEY='{{ aws_access_key }}' \
+            -p AWS_KEY_SECRET='{{ aws_key_secret }}' \
+            -p AWS_BUCKET='{{ aws_bucket }}' \
+            -p AWS_BUCKET_OBJECT='{{ aws_bucket_object }}' \
+            -p SERVICE_ACCOUNT_NAME={{ etcdbackup_service_account }} \
+            -p REPOSITORY_URL='{{ repository_url }}' \
+            -n {{ etcdbackup_job_namespace }} \ 
+            | oc apply -f - 
+          register: etcbackup_cron_created
+
+    - name: '{{ ansible_name_module }} | link secrets to service accounts'
+      block:
+        - name: '{{ ansible_name_module }} | link secret to service accounts'
+          command: "{{ openshift_cli }} secrets link {{ item }} {{ image_pullsecret_name }} --for=pull "
+          loop:
+            - "{{ default_service_account }}"
+            - "{{ etcdbackup_service_account }}"
+          register: secrets_linked 
