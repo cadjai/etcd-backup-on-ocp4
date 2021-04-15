@@ -1,0 +1,166 @@
+apiVersion: template.openshift.io/v1
+kind: Template
+labels:
+  etcd-backup: 1.0.0
+  template: etcd-backup-cronjob
+message: 'A new Etcd Backup cronjo has been created in your project.'
+metadata:
+  annotations:
+    description: A cronjob to backup etcd and store backup files in S3 if needed. For more information about using this template, see https://github.com/cadjai/etcd-backup-on-ocp4.
+    iconClass: icon-sso
+    openshift.io/display-name: ETCD Backup cronjob
+    openshift.io/provider-display-name: Red Hat, Inc.
+    tags: etcd,backup,hidden
+    template.openshift.io/documentation-url: https://access.redhat.com/documentation/en-us/openshift_container_platform/4.7/html/backup_and_restore/index 
+    template.openshift.io/long-description: This template defines resources needed to deploy the cronjob to use to backup etcd.
+    template.openshift.io/support-url: https://access.redhat.com
+    version: etcd-backup-cronjob-v1.0.0
+    labels:
+  name: etcd-backup-cronjob 
+objects:
+- apiVersion: v1
+  kind: ServiceAccount
+  metadata:
+    name: ${SERVICE_ACCOUNT_NAME}
+    namespace: ${APPLICATION_NAMESPACE}
+- apiVersion: v1
+  data:
+    .dockerconfigjson: ${IMAGE_PULLSECRET_JSONCONFIG} 
+  kind: Secret
+  metadata:
+    name: ${IMAGE_PULLSECRET_NAME} 
+    namespace: ${APPLICATION_NAMESPACE}
+  type: kubernetes.io/dockerconfigjson
+- apiVersion: image.openshift.io/v1
+  kind: ImageStream
+  metadata:
+    annotations:
+    name: ${BACKUP_IMAGE}
+    namespace: ${APPLICATION_NAMESPACE}
+  spec:
+    lookupPolicy:
+      local: false
+    tags:
+    - annotations: 
+        openshift.io/imported-from: ${BACKUP_IMAGE_REGISTRY_REPO}/${BACKUP_IMAGE}
+      from:
+        kind: DockerImage
+        name: ${BACKUP_IMAGE_REGISTRY_REPO}/${BACKUP_IMAGE}
+      importPolicy: {}
+      name: latest
+      referencePolicy:
+        type: Source
+- apiVersion: batch/v1beta1
+  kind: CronJob
+  metadata:
+    name: ${APPLICATION_NAME}
+    namespace: ${APPLICATION_NAMESPACE}
+  spec:
+    concurrencyPolicy: Allow
+    failedJobsHistoryLimit: 1
+    jobTemplate:
+      metadata:
+      spec:
+        template:
+          metadata:
+          spec:
+            containers:
+            - command: ["/bin/sh"]
+              args:
+              - -c
+              - 'chroot /host /usr/local/bin/cluster-backup.sh /home/core/assets/backup && aws s3 sync /host/home/core/assets/backup/ "s3://$AWS_BUCKET/$AWS_BUCKET_OBJECT/"'
+              env:
+              - name: AWS_ACCESS_KEY_ID
+                value: ${AWS_ACCESS_KEY} 
+              - name: AWS_SECRET_ACCESS_KEY
+                value: ${AWS_KEY_SECRET} 
+              - name: AWS_BUCKET
+                value: ${AWS_BUCKET} 
+              - name: AWS_BUCKET_OBJECT
+                value: ${AWS_BUCKET_OBJECT} 
+              - name: AWS_DEFAULT_REGION
+                value: ${AWS_REGION} 
+              image: ${AWS_CLI_IMAGE_REGISTRY_REPO}/${AWS_CLI_IMAGE}
+              imagePullPolicy: IfNotPresent
+              name: ${APPLICATION_NAME}-store
+              resources: {}
+              securityContext:
+                privileged: true
+                runAsUser: 0
+              terminationMessagePath: /dev/termination-log
+              terminationMessagePolicy: File
+              volumeMounts:
+              - mountPath: /host
+                name: host
+            dnsPolicy: ClusterFirst
+            nodeSelector:
+              node-role.kubernetes.io/master: ""
+            restartPolicy: OnFailure
+            enableServiceLinks: true
+            hostNetwork: true
+            hostPID: true
+            schedulerName: default-scheduler
+            securityContext: {}
+            serviceAccount: ${SERVICE_ACCOUNT_NAME}
+            serviceAccountName: ${SERVICE_ACCOUNT_NAME}
+            terminationGracePeriodSeconds: 30
+            tolerations:
+            - operator: Exists
+            volumes:
+            - hostPath:
+                path: /
+                type: Directory
+              name: host
+    schedule: ${ETCD_BACKUP_CRON_EXPRESSION} 
+    successfulJobsHistoryLimit: 3
+    suspend: false
+parameters:
+- description: The name for the application.
+  displayName: Application Name
+  name: APPLICATION_NAME
+  required: false
+  value: etcd-backup 
+- description: Namespace in which the application is being deployed .
+  displayName: ImageStream Namespace
+  name: APPLICATION_NAMESPACE
+  required: true
+- description: The name of the service account to use to deploy the cronjob. Note that this will have permissions to run privileged pods.
+  displayName: Service Account Name
+  name: SERVICE_ACCOUNT_NAME
+  value: etcd-backup-sa
+- description: The AWS CLI Image to use to bundle and upload backup to S3.
+  displayName: Ansible Tool Image
+  name: AWS_CLI_IMAGE
+  value: aws-cli 
+- description: The Registry where the image is pulled from.
+  displayName: AWS CLI  Image Registry and Repository
+  name: AWS_CLI_IMAGE_REGISTRY_REPO
+  value: docker.io/amazon 
+- description: The Cron expression to use to run the cron job. if not set default to daily.
+  displayName: Cron Expression
+  name: ETCD_BACKUP_CRON_EXPRESSION
+  value: 01 23 * * * 
+- description: The AWS Access Key 
+  displayName: AWS Key Value
+  name: AWS_ACCESS_KEY
+  required: true
+- description: The AWS Key Secret 
+  displayName: AWS Key Secret
+  name: AWS_KEY_SECRET
+  required: true
+- description: The AWS S3 Storage Bucket 
+  displayName: AWS S3 Storage Bucket
+  name: AWS_BUCKET
+  required: true
+- description: The AWS S3 Storage Bucket Object 
+  displayName: AWS S3 Storage Bucket Object 
+  name: AWS_BUCKET_OBJECT
+  required: true
+- description: The AWS Region the S3 bucket is located in
+  displayName: AWS Region
+  name: AWS_REGION
+  value: "us-east-1"
+- description: The AWS Account credential secret name 
+  displayName: AWS Account Credentials Secret
+  name: AWS_ACCT_CREDS
+  value: "aws-acct-creds"
