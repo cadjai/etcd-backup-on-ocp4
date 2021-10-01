@@ -23,33 +23,6 @@ objects:
   metadata:
     name: ${SERVICE_ACCOUNT_NAME}
     namespace: ${APPLICATION_NAMESPACE}
-- apiVersion: v1
-  data:
-    .dockerconfigjson: ${IMAGE_PULLSECRET_JSONCONFIG} 
-  kind: Secret
-  metadata:
-    name: ${IMAGE_PULLSECRET_NAME} 
-    namespace: ${APPLICATION_NAMESPACE}
-  type: kubernetes.io/dockerconfigjson
-- apiVersion: image.openshift.io/v1
-  kind: ImageStream
-  metadata:
-    annotations:
-    name: ${BACKUP_IMAGE}
-    namespace: ${APPLICATION_NAMESPACE}
-  spec:
-    lookupPolicy:
-      local: false
-    tags:
-    - annotations: 
-        openshift.io/imported-from: ${BACKUP_IMAGE_REGISTRY_REPO}/${BACKUP_IMAGE}
-      from:
-        kind: DockerImage
-        name: ${BACKUP_IMAGE_REGISTRY_REPO}/${BACKUP_IMAGE}
-      importPolicy: {}
-      name: latest
-      referencePolicy:
-        type: Source
 - apiVersion: batch/v1beta1
   kind: CronJob
   metadata:
@@ -67,29 +40,33 @@ objects:
             containers:
             - args:
               - -c
-              - /usr/local/bin/ansible-playbook  -i $ETCD_BACKUP_PLAYBOOK_DIR/etcd-backup-on-ocp4/inventory $ETCD_BACKUP_PLAYBOOK_DIR/etcd-backup-on-ocp4/store-etcd-backup-to-s3.yml -vvv
+              - aws s3 sync $ETCD_BACKUP_BUNDLE_DIR/ "s3://$AWS_BUCKET/$AWS_BUCKET_OBJECT/" && chroot /host rm -rf $ETCD_BACKUP_BUNDLE_DIR $ETCD_BACKUP_DIR 
               command:
-              - bash
+              - /bin/sh
               env:
+              - name: AWS_ACCESS_KEY_ID
+                valueFrom:
+                  secretKeyRef:
+                    name: ${AWS_ACCT_CREDS_SECRET}
+                    key: aws_access_key
+              - name: AWS_SECRET_ACCESS_KEY
+                valueFrom:
+                  secretKeyRef:
+                    name: ${AWS_ACCT_CREDS_SECRET}
+                    key: aws_access_secret
               - name: ETCD_BACKUP_DIR
                 value: ${ETCD_BACKUP_DIR}
-              - name: ETCD_BACKUP_PLAYBOOK_DIR
-                value: ${ETCD_BACKUP_PLAYBOOK_DIR}
               - name: ETCD_BACKUP_BUNDLE_DIR
                 value: ${ETCD_BACKUP_BUNDLE_DIR}
               - name: ETCD_BACKUP_FILE_PREFIX
                 value: ${ETCD_BACKUP_FILE_PREFIX} 
-              - name: AWS_ACCESS_KEY
-                value: ${AWS_ACCESS_KEY} 
-              - name: AWS_KEY_SECRET
-                value: ${AWS_KEY_SECRET} 
               - name: AWS_BUCKET
                 value: ${AWS_BUCKET} 
               - name: AWS_BUCKET_OBJECT
                 value: ${AWS_BUCKET_OBJECT} 
-              - name: ETCD_BACKUP_S3_UPLOAD
-                value: ${ETCD_BACKUP_S3_UPLOAD} 
-              image: ${ANSIBLE_IMAGE_REGISTRY_REPO}/${ANSIBLE_IMAGE}
+              - name: AWS_DEFAULT_REGION
+                value: ${AWS_REGION}
+              image: ${AWS_CLI_IMAGE_REGISTRY_REPO}/${AWS_CLI_IMAGE}
               imagePullPolicy: IfNotPresent
               name: ${APPLICATION_NAME}-store
               resources: {}
@@ -104,40 +81,19 @@ objects:
             dnsPolicy: ClusterFirst
             initContainers:
             - args:
-              - /bin/sh
+              - bash
               - -c
-              - chroot /host mkdir -p $ETCD_BACKUP_BUNDLE_DIR $ETCD_BACKUP_PLAYBOOK_DIR $ETCD_BACKUP_DIR/$(date +"%d-%m-%Y") && chroot /host chown -R core $ETCD_BACKUP_BUNDLE_DIR $ETCD_BACKUP_PLAYBOOK_DIR $ETCD_BACKUP_DIR && chroot /host /usr/local/bin/cluster-backup.sh $ETCD_BACKUP_DIR/$(date +"%d-%m-%Y")
+              - chroot /host mkdir -p $ETCD_BACKUP_BUNDLE_DIR $ETCD_BACKUP_DIR/$(date +"%d-%m-%Y") && chroot /host chown -R core $ETCD_BACKUP_BUNDLE_DIR $ETCD_BACKUP_DIR && chroot /host /usr/local/bin/cluster-backup.sh $ETCD_BACKUP_DIR/$(date +"%d-%m-%Y") && chroot /host tar -c --use-compress-program='pigz -9' -v -f $ETCD_BACKUP_BUNDLE_DIR/$ETCD_BACKUP_FILE_PREFIX-$(date +"%d-%m-%Y").tar.xz -C $ETCD_BACKUP_DIR/$(date +"%d-%m-%Y") .
               env:
               - name: ETCD_BACKUP_DIR
                 value: ${CHROOT_ETCD_BACKUP_DIR} 
-              - name: ETCD_BACKUP_PLAYBOOK_DIR
-                value: ${CHROOT_ETCD_BACKUP_PLAYBOOK_DIR} 
               - name: ETCD_BACKUP_BUNDLE_DIR
                 value: ${CHROOT_ETCD_BACKUP_BUNDLE_DIR} 
+              - name: ETCD_BACKUP_FILE_PREFIX
+                value: ${ETCD_BACKUP_FILE_PREFIX} 
               image: ${BACKUP_IMAGE_REGISTRY_REPO}/${BACKUP_IMAGE}
               imagePullPolicy: IfNotPresent
               name: ${APPLICATION_NAME}
-              resources: {}
-              securityContext:
-                privileged: true
-                runAsUser: 0
-              terminationMessagePath: /dev/termination-log
-              terminationMessagePolicy: File
-              volumeMounts:
-              - mountPath: /host
-                name: host
-            - args:
-              - /bin/sh
-              - -c
-              - cd $ETCD_BACKUP_PLAYBOOK_DIR_NONROOT && rm -rf * && git clone $REPOSITORY_URL
-              env:
-              - name: ETCD_BACKUP_PLAYBOOK_DIR_NONROOT
-                value: ${ETCD_BACKUP_PLAYBOOK_DIR}
-              - name: REPOSITORY_URL 
-                value: ${REPOSITORY_URL}
-              image: ${BACKUP_IMAGE_REGISTRY_REPO}/${BACKUP_IMAGE}
-              imagePullPolicy: IfNotPresent
-              name: ${APPLICATION_NAME}-clone-repo
               resources: {}
               securityContext:
                 privileged: true
@@ -182,14 +138,14 @@ parameters:
   displayName: Service Account Name
   name: SERVICE_ACCOUNT_NAME
   value: etcd-backup-sa
-- description: The name of the Image pull secret to use to pull necessary images from the Red Hat registry.
-  displayName: Image Pull Secret Name
-  name: IMAGE_PULLSECRET_NAME
-  value: redhat-registry-io-pull-secret 
-- description: The encrypted value of the docker json config for the Image pull secret to use to pull necessary images from the Red Hat registry.
-  displayName: Image Pull Secret Docker Json Config
-  name: IMAGE_PULLSECRET_JSONCONFIG
-  required: true
+- description: The AWS CLI Image to use to bundle and upload backup to S3.
+  displayName: Ansible Tool Image
+  name: AWS_CLI_IMAGE
+  value: aws-cli
+- description: The Registry where the image is pulled from.
+  displayName: AWS CLI  Image Registry and Repository
+  name: AWS_CLI_IMAGE_REGISTRY_REPO
+  value: docker.io/amazon
 - description: The Red Hat Os tool Image to use to perform the backup..
   displayName: Backup Image Tool
   name: BACKUP_IMAGE
@@ -198,14 +154,6 @@ parameters:
   displayName: Backup Image Tool Registry and Repository
   name: BACKUP_IMAGE_REGISTRY_REPO
   value: registry.redhat.io/openshift4 
-- description: The Ansible Image to use to bundle and upload backup to S3.
-  displayName: Ansible Tool Image
-  name: ANSIBLE_IMAGE
-  value: koffer 
-- description: The Registry where the image is pulled from.
-  displayName: Ansible Image Tool Registry and Repository
-  name: ANSIBLE_IMAGE_REGISTRY_REPO
-  value: quay.io/cloudctl 
 - description: The Directory on the pod within the chroot jail where the ansible playbook files are to be placed. This path is used to create the directory within the jail.
   displayName: Playbook Directory
   name: CHROOT_ETCD_BACKUP_PLAYBOOK_DIR
@@ -238,27 +186,19 @@ parameters:
   displayName: Cron Expression
   name: ETCD_BACKUP_CRON_EXPRESSION
   value: 01 23 * * * 
-- description: The flag used to decide if backup is to be stored in S3.
-  displayName: Upload to S3
-  name: ETCD_BACKUP_S3_UPLOAD
-  value: "true"
-- description: The AWS Access Key 
-  displayName: AWS Key Value
-  name: AWS_ACCESS_KEY
-  required: false
-- description: The AWS Key Secret 
-  displayName: AWS Key Secret
-  name: AWS_KEY_SECRET
-  required: false
 - description: The AWS S3 Storage Bucket 
   displayName: AWS S3 Storage Bucket
   name: AWS_BUCKET
-  required: false
+  required: true
 - description: The AWS S3 Storage Bucket Object 
   displayName: AWS S3 Storage Bucket Object 
   name: AWS_BUCKET_OBJECT
-  required: false
-- description: The Source repo where the code is checkout from 
-  displayName: Code source repository
-  name: REPOSITORY_URL
   required: true
+- description: The AWS Region the S3 bucket is located in
+  displayName: AWS Region
+  name: AWS_REGION
+  value: "us-east-1"
+- description: The AWS Account credential secret name
+  displayName: AWS Account Credentials Secret
+  name: AWS_ACCT_CREDS_SECRET
+  value: "aws-acct-creds"

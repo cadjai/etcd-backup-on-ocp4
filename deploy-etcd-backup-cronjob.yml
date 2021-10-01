@@ -5,32 +5,10 @@
     ansible_python_interpreter: /usr/bin/python3
   vars_files:
     - 'vault.yml'
+    - 'global.yml'
   vars:
     module: "deploy-etcd-backup-cron"
     ansible_name_module: "Deploy Etcd Backup Cron Job | {{ module }}"
-    etcdbackup_job_namespace: 'etcd-backup'
-    etcdbackup_job_namespace_description: 'ETCD Backup Cron Jon Namespace'
-    etcdbackup_service_account: 'etcdbackup-sa'
-    default_service_account: 'default'
-    ocp_cluster_user: '{{ vault_ocp_cluster_user }}'
-    ocp_cluster_token: '{{ vault_ocp_cluster_token }}'
-    ocp_cluster_user_password: '{{ vault_ocp_cluster_user_password }}'
-    ocp_cluster_console_url: '{{ vault_ocp_cluster_console_url }}'
-    ocp_cluster_console_port: '6443'
-    openshift_cli: '/usr/bin/oc'
-    bkp_bundle_file_prefix: 'etcd-backup'
-    aws_access_key: '{{ vault_aws_access_key }}'
-    aws_key_secret: '{{ vault_aws_key_secret }}'
-    aws_bucket: '{{ vault_aws_bucket }}'
-    aws_bucket_object: '{{ vault_aws_bucket_object }}'
-    scc_name: "privileged"
-    add_privileged_scc_to_etcdbackup_sa: "true"
-    etcdbackup_template_path: 'ocp/etcd-backup-cronjob-template-koffer.yml'
-    etcdbackup_service_name: 'etcd-backup'
-    image_pullsecret_json: '{{ vault_image_pullsecret_json }}'
-    image_pullsecret_name: 'redhat-registry-io-pull-secret'
-    repository_url: 'https://github.com/cadjai/etcd-backup-on-ocp4.git'
-    cron_jon_schedule_expression: "41 * * * *"
 
   pre_tasks:
     - name: Install required pip library
@@ -83,6 +61,18 @@
             - "not 'openshift' in etcdbackup_job_namespace"
           register: etcdbackup_ns_created
 
+    - name: '{{ ansible_name_module }} | Create k8 secret for AWS access credentials'
+      block:
+        - name: '{{ ansible_name_module }} |  Create from AWS Access key'
+          command: >
+            {{ openshift_cli }} create \
+             secret generic {{ aws_account_creds_secret }} \
+             --from-literal=aws_access_key={{ aws_access_key }} \
+             --from-literal=aws_access_secret={{ aws_key_secret }} \
+             -n '{{ etcdbackup_job_namespace }}'
+          failed_when: "secret_created.rc >=1 and not ' already exists' in secret_created.stderr"
+          register: secret_created
+
     - name: '{{ ansible_name_module }} | Create Pull secret'
       block:
         - name: '{{ ansible_name_module }} |  Create Pull Secret from config json'
@@ -132,6 +122,9 @@
       failed_when:
         - etcdbackupimage_puller_access_granted.rc >= 1
         - not 'AlreadyExists' in etcdbackupimage_puller_access_granted.stderr
+      when:
+        - create_pullsecret is defined
+        - create_pullsecret | bool
       register: etcdbackupimage_puller_access_granted
 
     - name: '{{ ansible_name_module }} | Configure etcd-backup '
@@ -146,23 +139,17 @@
             {{ openshift_cli }} process -f {{ etcdbackup_template_path }} \
             -p APPLICATION_NAME='{{ etcdbackup_service_name }}' \
             -p APPLICATION_NAMESPACE={{ etcdbackup_job_namespace }} \
-            -p IMAGE_PULLSECRET_JSONCONFIG={{ image_pullsecret_json }} \
-            -p AWS_ACCESS_KEY='{{ aws_access_key }}' \
-            -p AWS_KEY_SECRET='{{ aws_key_secret }}' \
+            -p AWS_ACCT_CREDS_SECRET='{{ aws_account_creds_secret }}' \
             -p AWS_BUCKET='{{ aws_bucket }}' \
             -p AWS_BUCKET_OBJECT='{{ aws_bucket_object }}' \
+            -p AWS_REGION='{{ aws_region }}' \
             -p SERVICE_ACCOUNT_NAME={{ etcdbackup_service_account }} \
-            -p REPOSITORY_URL='{{ repository_url }}' \
+            -p BACKUP_IMAGE_REGISTRY_REPO='{{ backup_image_registry_repository }}' \
+            -p BACKUP_IMAGE='{{ backup_image_name }}' \
+            -p AWS_CLI_IMAGE_REGISTRY_REPO='{{ aws_cli_image_registry_repository }}' \
+            -p AWS_CLI_IMAGE='{{ aws_cli_image_name }}' \
             -p ETCD_BACKUP_CRON_EXPRESSION='{{ cron_jon_schedule_expression }}' \
-            -n {{ etcdbackup_job_namespace }} \ 
-            | oc apply -f - 
+            -n {{ etcdbackup_job_namespace }} \
+            | oc apply -f -
           register: etcbackup_cron_created
 
-    - name: '{{ ansible_name_module }} | link secrets to service accounts'
-      block:
-        - name: '{{ ansible_name_module }} | link secret to service accounts'
-          command: "{{ openshift_cli }} secrets link {{ item }} {{ image_pullsecret_name }} --for=pull "
-          loop:
-            - "{{ default_service_account }}"
-            - "{{ etcdbackup_service_account }}"
-          register: secrets_linked 
