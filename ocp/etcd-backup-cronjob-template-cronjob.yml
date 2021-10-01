@@ -40,7 +40,7 @@ objects:
             containers:
             - args:
               - -c
-              - aws s3 sync $ETCD_BACKUP_BUNDLE_DIR/ "s3://$AWS_BUCKET/$AWS_BUCKET_OBJECT/" && chroot /host rm -rf $ETCD_BACKUP_BUNDLE_DIR $ETCD_BACKUP_DIR 
+              - aws s3 sync $ETCD_BACKUP_BUNDLE_DIR/ "s3://$AWS_BUCKET/$AWS_BUCKET_OBJECT/" && rm -rf $ETCD_BACKUP_BUNDLE_DIR $ETCD_BACKUP_DIR 
               command:
               - /bin/sh
               env:

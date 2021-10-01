@@ -41,7 +41,7 @@ objects:
             - command: ["/bin/sh"]
               args:
               - -c
-              - 'chroot /host /usr/local/bin/cluster-backup.sh /home/core/assets/backup && aws s3 sync /host/home/core/assets/backup/ "s3://$AWS_BUCKET/$AWS_BUCKET_OBJECT/"'
+              - 'chroot /host /usr/local/bin/cluster-backup.sh /home/core/assets/backup && aws s3 sync /host/home/core/assets/backup/ "s3://$AWS_BUCKET/$AWS_BUCKET_OBJECT/" && rm -rf /home/core/assets/backup/*'
               env:
               - name: AWS_ACCESS_KEY_ID
                 valueFrom: 

@@ -50,7 +50,7 @@ The above playbook create a compressed archive of all of the backup file and upl
 
 To run the AWS CLI based playbook use the ansible-playbook command as follows   
 `ansible-playbook deploy-etcd-backup-cronjob-awscli.yml --vault-id @prompt -vvv`  
-The above playbook creates perform the backup uploads the two files into S3.
+The above playbook creates perform the backup uploads the two files into S3 and cleans the files from the nodes so that overtime they don't take up storage on the control plane node.
 
 
 
