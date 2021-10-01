@@ -1,0 +1,37 @@
+###################################
+# etcd backup variables
+###################################
+etcdbackup_job_namespace: 'etcd-backup'
+etcdbackup_job_namespace_description: 'ETCD Backup Cron Jon Namespace'
+etcdbackup_service_account: 'etcdbackup-sa'
+default_service_account: 'default'
+ocp_cluster_user: '{{ vault_ocp_cluster_user }}'
+ocp_cluster_token: '{{ vault_ocp_cluster_token }}'
+ocp_cluster_user_password: '{{ vault_ocp_cluster_user_password }}'
+ocp_cluster_console_url: '{{ vault_ocp_cluster_console_url }}'
+ocp_cluster_console_port: '6443'
+openshift_cli: '/usr/bin/oc'
+bkp_bundle_file_prefix: 'etcd-backup'
+aws_access_key: '{{ vault_aws_access_key }}'
+aws_key_secret: '{{ vault_aws_key_secret }}'
+aws_bucket: '{{ vault_aws_bucket }}'
+aws_bucket_object: '{{ vault_aws_bucket_object }}'
+scc_name: "privileged"
+add_privileged_scc_to_etcdbackup_sa: "true"
+etcdbackup_template_path: 'ocp/etcd-backup-cronjob-template-awscli.yml'
+etcdbackup_service_name: 'etcd-backup'
+aws_account_creds_secret: 'aws-acct-creds'
+cron_jon_schedule_expression: "46 * * * *"
+aws_cli_image_registry_repository: '{{ registry_host_fqdn }}/openshift4/amazon'
+aws_cli_image_name: 'aws-cli'
+aws_region: 'us-east-1'
+## extra variables for koffer image
+image_pullsecret_json: '{{ vault_image_pullsecret_json }}'
+image_pullsecret_name: 'redhat-registry-io-pull-secret'
+repository_url: 'https://github.com/cadjai/etcd-backup-on-ocp4.git'
+backup_image_registry_repository: '{{ registry_host_fqdn }}/openshift4'
+backup_image_name: 'ose-tools-rhel8'
+etcdbackup_template_path: 'ocp/etcd-backup-cronjob-template-cronjob.yml'
+###################################
+# end etcd backup variables
+###################################
