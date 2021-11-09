@@ -103,6 +103,8 @@ objects:
               volumeMounts:
               - mountPath: /host
                 name: host
+              - mountPath: /etc/pki/ca-trust
+                name: ca-store
             nodeSelector:
               node-role.kubernetes.io/master: ""
             restartPolicy: OnFailure
@@ -121,6 +123,10 @@ objects:
                 path: /
                 type: Directory
               name: host
+            - hostPath:
+                path: /etc/pki/ca-trust
+                type: Directory
+              name: ca-store
     schedule: ${ETCD_BACKUP_CRON_EXPRESSION} 
     successfulJobsHistoryLimit: 3
     suspend: false
