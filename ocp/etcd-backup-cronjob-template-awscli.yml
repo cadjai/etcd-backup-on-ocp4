@@ -59,6 +59,8 @@ objects:
                 value: ${AWS_BUCKET_OBJECT} 
               - name: AWS_DEFAULT_REGION
                 value: ${AWS_REGION} 
+              - name: AWS_CA_BUNDLE
+                value: ${AWS_CA_BUNDLE_PATH}
               image: ${AWS_CLI_IMAGE_REGISTRY_REPO}/${AWS_CLI_IMAGE}
               imagePullPolicy: IfNotPresent
               name: ${APPLICATION_NAME}-store
@@ -141,3 +143,7 @@ parameters:
   displayName: AWS Account Credentials Secret
   name: AWS_ACCT_CREDS_SECRET
   value: "aws-acct-creds"
+- description: The AWS CA Trust Bundle Path
+  displayName: AWS CA Bundle Path
+  name: AWS_CA_BUNDLE_PATH
+  value: "/etc/pki/ca-trust/extracted/pem/tls-ca-bundle.pem"
